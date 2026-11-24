@@ -5480,6 +5480,48 @@ Existing data and any unsaved attendance or metric edits will be discarded. This
     });
   }
 
+  // js/analytics.js
+  function startStandaloneAnalytics() {
+    let scriptStarted = false;
+    let ready = false;
+    let pending = [];
+    function recordPage() {
+      const route = new URLSearchParams(location.search).get("route") || "/admin/players";
+      const path = document.querySelector("#not-found").hidden ? route.replace(/\/+$/, "") || "/admin/players" : "/not-found";
+      const page = { path, title: document.title, referrer: "" };
+      if (ready) window.goatcounter.count(page);
+      else pending.push(page);
+    }
+    function loadAnalytics() {
+      if (scriptStarted || !navigator.onLine) return;
+      scriptStarted = true;
+      window.goatcounter = { no_onload: true, allow_local: true };
+      const script = document.createElement("script");
+      script.async = true;
+      script.src = "https://gc.zgo.at/count.js";
+      script.dataset.goatcounter = "https://attendance.goatcounter.com/count";
+      script.addEventListener("load", () => {
+        ready = true;
+        for (const page of pending) window.goatcounter.count(page);
+        pending = [];
+      });
+      script.addEventListener("error", () => {
+        console.warn("Could not load GoatCounter analytics.");
+        pending = [];
+        scriptStarted = false;
+        script.remove();
+      });
+      document.head.appendChild(script);
+      recordPage();
+    }
+    window.addEventListener("route-change", () => {
+      if (scriptStarted && navigator.onLine) recordPage();
+      else loadAnalytics();
+    });
+    window.addEventListener("online", loadAnalytics);
+    loadAnalytics();
+  }
+
   // js/app.js
   document.querySelector("#app-version").textContent = `Version ${package_default.version}`;
   document.querySelector("#reload-app").addEventListener("click", () => location.reload());
@@ -5503,6 +5545,7 @@ Existing data and any unsaved attendance or metric edits will be discarded. This
       });
       await loadPages();
       startRouter({ standalone: config.standalone });
+      if (config.standalone) startStandaloneAnalytics();
       const lookupService = createLookupService(repository);
       const attendanceService = createAttendanceService(repository);
       const refreshPlayers = await initializePlayersPage(lookupService);
