@@ -591,7 +591,7 @@ dialog::backdrop { background: rgba(15, 33, 52, .58); }
   };
 
   // standalone:config
-  var config = Object.freeze({ storageProvider: "memory" });
+  var config = Object.freeze({ storageProvider: "memory", standalone: true });
 
   // js/features/attendance-dates/rules.js
   function assertAttendanceDate(date) {
@@ -2635,7 +2635,7 @@ dialog::backdrop { background: rgba(15, 33, 52, .58); }
   }
 
   // js/router.js
-  function startRouter() {
+  function startRouter({ standalone = false } = {}) {
     const nav = document.querySelector('nav[aria-label="Main navigation"]');
     let lastMenuButton = null;
     nav.addEventListener("click", (event) => {
@@ -2659,21 +2659,29 @@ dialog::backdrop { background: rgba(15, 33, 52, .58); }
       ["/reports/comparison", { page: document.querySelector("#comparison-report-page"), title: "Player Comparison" }],
       ["/reports/metrics", { page: document.querySelector("#metric-dashboard-page"), title: "Metric Dashboards" }]
     ]);
+    const navLinks = new Map([...nav.querySelectorAll("a[href]")].map((link) => [link.getAttribute("href"), link]));
     const notFound = document.querySelector("#not-found");
+    const queryRouting = standalone || location.protocol === "file:";
     const normalizeRoute = (pathname) => pathname.replace(/\/+$/, "") || "/";
     const routeFromLocation = () => {
-      if (location.protocol === "file:") {
+      if (queryRouting) {
         return normalizeRoute(new URLSearchParams(location.search).get("route") || "/admin/players");
       }
       return normalizeRoute(location.pathname);
     };
     const routeUrl = (route) => {
-      if (location.protocol !== "file:") return route;
+      if (!queryRouting) return route;
       const url = new URL(location.href);
       url.searchParams.set("route", route);
       url.hash = "";
       return url;
     };
+    if (queryRouting) {
+      document.querySelectorAll("a[href]").forEach((link) => {
+        const route = link.getAttribute("href");
+        if (routes.has(route)) link.href = routeUrl(route);
+      });
+    }
     const setRouteUrl = (route, replace = false) => {
       history[replace ? "replaceState" : "pushState"](null, "", routeUrl(route));
     };
@@ -2689,7 +2697,7 @@ dialog::backdrop { background: rgba(15, 33, 52, .58); }
       for (const [path, page] of routes) {
         const active = path === currentRoute;
         page.page.hidden = !active;
-        const link = nav.querySelector(`a[href="${path}"]`);
+        const link = navLinks.get(path);
         if (link) {
           if (active) link.setAttribute("aria-current", "page");
           else link.removeAttribute("aria-current");
@@ -2709,7 +2717,8 @@ dialog::backdrop { background: rgba(15, 33, 52, .58); }
       if (href.startsWith("#")) return;
       const destination = new URL(link.href);
       if (destination.origin !== location.origin) return;
-      const route = normalizeRoute(location.protocol === "file:" ? href : destination.pathname);
+      if (queryRouting && destination.pathname !== location.pathname) return;
+      const route = normalizeRoute(queryRouting ? destination.searchParams.get("route") || "/" : destination.pathname);
       if (!routes.has(route)) return;
       event.preventDefault();
       if (route === currentRoute || !canLeaveRoute()) return;
@@ -5493,7 +5502,7 @@ Existing data and any unsaved attendance or metric edits will be discarded. This
         }
       });
       await loadPages();
-      startRouter();
+      startRouter({ standalone: config.standalone });
       const lookupService = createLookupService(repository);
       const attendanceService = createAttendanceService(repository);
       const refreshPlayers = await initializePlayersPage(lookupService);
